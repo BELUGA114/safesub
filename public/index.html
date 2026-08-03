@@ -1,0 +1,108 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="color-scheme" content="light">
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self'; script-src 'self'; style-src 'self'; connect-src 'self'; base-uri 'none'; form-action 'self'"
+    >
+    <title>SafeSub</title>
+    <link rel="stylesheet" href="/styles.css">
+    <script src="/app.js" defer></script>
+  </head>
+  <body>
+    <header class="site-header">
+      <div class="header-inner">
+        <div>
+          <p class="product-kind">VLESS 订阅恢复</p>
+          <h1>SafeSub</h1>
+        </div>
+        <button id="clear-mapping" class="quiet-button" type="button" hidden>清除映射</button>
+      </div>
+    </header>
+
+    <main>
+      <div class="workflow" aria-label="订阅生成流程">
+        <section class="step" aria-labelledby="mask-title">
+          <div class="step-marker" aria-hidden="true">1</div>
+          <div class="step-content">
+            <div class="step-heading">
+              <div>
+                <p class="step-label">第一步</p>
+                <h2 id="mask-title">生成伪装节点</h2>
+              </div>
+              <span id="mapping-state" class="state" hidden>映射已保存</span>
+            </div>
+
+            <form id="mask-form">
+              <label for="vless-uri">真实 VLESS</label>
+              <textarea
+                id="vless-uri"
+                name="vlessUri"
+                rows="5"
+                spellcheck="false"
+                autocomplete="off"
+                placeholder="vless://..."
+                required
+              ></textarea>
+              <button class="primary-button" type="submit">生成伪装节点</button>
+            </form>
+
+            <div id="masked-result" class="result" hidden>
+              <label for="masked-uri">伪装 VLESS</label>
+              <div class="copy-row">
+                <textarea id="masked-uri" rows="4" readonly></textarea>
+                <button class="copy-button" type="button" data-copy-target="masked-uri">复制</button>
+              </div>
+              <details>
+                <summary>加密映射令牌</summary>
+                <div class="copy-row token-row">
+                  <textarea id="mapping-token" rows="3" readonly></textarea>
+                  <button class="copy-button" type="button" data-copy-target="mapping-token">复制</button>
+                </div>
+              </details>
+            </div>
+          </div>
+        </section>
+
+        <section class="step" aria-labelledby="subscription-title">
+          <div class="step-marker" aria-hidden="true">2</div>
+          <div class="step-content">
+            <p class="step-label">第二步</p>
+            <h2 id="subscription-title">生成最终订阅</h2>
+
+            <form id="subscription-form">
+              <label for="upstream-url">第三方订阅 URL</label>
+              <input
+                id="upstream-url"
+                name="upstreamUrl"
+                type="url"
+                inputmode="url"
+                spellcheck="false"
+                autocomplete="off"
+                placeholder="https://..."
+                required
+              >
+              <button id="create-subscription" class="primary-button" type="submit" disabled>
+                生成最终订阅
+              </button>
+            </form>
+
+            <div id="subscription-result" class="result" hidden>
+              <label for="subscription-url">最终订阅 URL</label>
+              <div class="copy-row">
+                <input id="subscription-url" type="text" readonly>
+                <button class="copy-button" type="button" data-copy-target="subscription-url">复制</button>
+              </div>
+              <p class="credential-warning">此链接可直接读取真实订阅，请按凭证保管。</p>
+            </div>
+          </div>
+        </section>
+      </div>
+
+      <p id="status" class="status" role="status" aria-live="polite"></p>
+    </main>
+  </body>
+</html>
