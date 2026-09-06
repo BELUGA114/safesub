@@ -28,6 +28,7 @@ body {
 
 button,
 input,
+select,
 textarea {
   font: inherit;
   letter-spacing: 0;
@@ -170,6 +171,7 @@ label {
 }
 
 input,
+select,
 textarea {
   width: 100%;
   border: 1px solid #aebdb8;
@@ -179,7 +181,8 @@ textarea {
   outline: none;
 }
 
-input {
+input,
+select {
   min-height: 44px;
   padding: 10px 12px;
 }
@@ -195,6 +198,7 @@ textarea {
 }
 
 input:focus,
+select:focus,
 textarea:focus,
 button:focus-visible,
 summary:focus-visible {

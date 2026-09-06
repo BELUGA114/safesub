@@ -47,6 +47,11 @@
                 placeholder="vless://..."
                 required
               ></textarea>
+              <label for="transport">伪装节点传输</label>
+              <select id="transport" name="transport">
+                <option value="ws" selected>WebSocket（type=ws）</option>
+                <option value="xhttp">XHTTP（type=xhttp）</option>
+              </select>
               <button class="primary-button" type="submit">生成伪装节点</button>
             </form>
 

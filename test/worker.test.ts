@@ -43,6 +43,26 @@ describe("POST /api/mask", () => {
     expect(payload.realId).toBe("11111111-2222-4333-8444-555555555555");
   });
 
+  it("按指定传输生成伪装节点", async () => {
+    const response = await jsonRequest("/api/mask", { vlessUri: realUri, transport: "xhttp" });
+    const body = (await response.json()) as { maskedUri: string; mappingToken: string };
+
+    expect(response.status).toBe(200);
+    expect(new URL(body.maskedUri).searchParams.get("type")).toBe("xhttp");
+    expect(new URL(body.maskedUri).searchParams.get("mode")).toBe("auto");
+    const payload = await openToken(body.mappingToken, secret);
+    expect(payload.kind).toBe("mapping");
+  });
+
+  it("拒绝不支持的传输类型", async () => {
+    const response = await jsonRequest("/api/mask", { vlessUri: realUri, transport: "grpc" });
+
+    expect(response.status).toBe(400);
+    await expect(response.json()).resolves.toMatchObject({
+      error: { code: "invalid_request" },
+    });
+  });
+
   it("以稳定 JSON 错误拒绝非法 VLESS", async () => {
     const response = await jsonRequest("/api/mask", { vlessUri: "not-vless" });
 

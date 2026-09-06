@@ -17,6 +17,13 @@ describe("parseRealVless", () => {
     });
   });
 
+  it("接受 xhttp 传输的真实节点", () => {
+    const xhttpUri =
+      "vless://11111111-2222-4333-8444-555555555555@origin.example:8443?encryption=none&security=tls&type=xhttp&host=origin.example&path=%2Fsecret&sni=origin.example&mode=auto#Private";
+    expect(parseRealVless(xhttpUri).realQuery).toContain("type=xhttp");
+    expect(parseRealVless(xhttpUri).realQuery).toContain("mode=auto");
+  });
+
   it.each([
     "https://example.com",
     "vless://not-a-uuid@example.com:443?security=tls",
@@ -40,6 +47,23 @@ describe("createMaskedVless", () => {
     expect(result.maskedUri).not.toContain("origin.example");
     expect(result.maskedUri).not.toContain("secret");
     expect(result.maskedUri).not.toContain("Private");
+  });
+
+  it("缺省传输生成 ws 诱饵", () => {
+    const result = createMaskedVless(parseRealVless(realUri));
+    const masked = new URL(result.maskedUri);
+
+    expect(masked.searchParams.get("type")).toBe("ws");
+  });
+
+  it("xhttp 传输生成含 mode 的 xhttp 诱饵", () => {
+    const result = createMaskedVless(parseRealVless(realUri), "xhttp");
+    const masked = new URL(result.maskedUri);
+
+    expect(masked.searchParams.get("type")).toBe("xhttp");
+    expect(masked.searchParams.get("mode")).toBe("auto");
+    expect(result.mapping.fakeId).toBe(masked.username);
+    expect(result.maskedUri).not.toContain("origin.example");
   });
 });
 
@@ -80,6 +104,21 @@ describe("restoreVlessLine", () => {
     expect(restoreVlessLine("trojan://example", mapping)).toEqual({
       matched: false,
       line: "trojan://example",
+    });
+  });
+
+  it("恢复 xhttp 传输的完整查询串", () => {
+    const xhttpMapping = {
+      ...mapping,
+      realQuery:
+        "encryption=none&security=tls&type=xhttp&path=%2Fsecret&sni=origin.example&mode=auto",
+    };
+    const input =
+      "vless://aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa@203.0.113.8:443?security=tls&type=xhttp#Edge";
+
+    expect(restoreVlessLine(input, xhttpMapping)).toEqual({
+      matched: true,
+      line: "vless://11111111-2222-4333-8444-555555555555@203.0.113.8:443?encryption=none&security=tls&type=xhttp&path=%2Fsecret&sni=origin.example&mode=auto#Edge",
     });
   });
 });

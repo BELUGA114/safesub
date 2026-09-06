@@ -1,8 +1,15 @@
 import type { MappingPayload } from "./token";
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-const DECOY_QUERY =
-  "encryption=none&security=tls&type=ws&host=placeholder.invalid&path=%2Fsafesub&sni=placeholder.invalid";
+
+// 诱饵查询串只需语法有效且不泄露真实字段；第三方服务对 type 的支持不同，按用户选择生成。
+const DECOY_QUERIES = {
+  ws: "encryption=none&security=tls&type=ws&host=placeholder.invalid&path=%2Fsafesub&sni=placeholder.invalid",
+  xhttp:
+    "encryption=none&security=tls&type=xhttp&host=placeholder.invalid&path=%2Fsafesub&sni=placeholder.invalid&mode=auto",
+} as const;
+
+export type Transport = keyof typeof DECOY_QUERIES;
 
 export interface ParsedRealVless {
   realId: string;
@@ -44,10 +51,13 @@ export function parseRealVless(uri: string): ParsedRealVless {
   };
 }
 
-export function createMaskedVless(parsed: ParsedRealVless): MaskedVlessResult {
+export function createMaskedVless(
+  parsed: ParsedRealVless,
+  transport: Transport = "ws",
+): MaskedVlessResult {
   const fakeId = crypto.randomUUID();
   return {
-    maskedUri: `vless://${fakeId}@placeholder.invalid:443?${DECOY_QUERY}#SafeSub`,
+    maskedUri: `vless://${fakeId}@placeholder.invalid:443?${DECOY_QUERIES[transport]}#SafeSub`,
     mapping: {
       v: 1,
       kind: "mapping",

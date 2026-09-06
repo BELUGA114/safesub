@@ -6,7 +6,7 @@ import {
   type MappingPayload,
   type SubscriptionPayload,
 } from "./token";
-import { createMaskedVless, parseRealVless } from "./vless";
+import { createMaskedVless, parseRealVless, type Transport } from "./vless";
 
 const MAX_JSON_BODY_BYTES = 16 * 1024;
 const MAX_VLESS_URI_LENGTH = 4096;
@@ -118,7 +118,14 @@ async function handleMask(request: Request, env: Env): Promise<Response> {
     throw new AppError("invalid_vless", "VLESS URI 格式无效", 400);
   }
 
-  const result = createMaskedVless(parsed);
+  // 传输类型可选，缺省沿用 ws，保证旧客户端行为不变
+  const transportField = body["transport"] ?? "ws";
+  if (transportField !== "ws" && transportField !== "xhttp") {
+    throw new AppError("invalid_request", "字段 transport 仅支持 ws 或 xhttp", 400);
+  }
+  const transport = transportField as Transport;
+
+  const result = createMaskedVless(parsed, transport);
   const mappingToken = await sealToken(result.mapping, env.TOKEN_KEY);
   return jsonResponse({ maskedUri: result.maskedUri, mappingToken });
 }

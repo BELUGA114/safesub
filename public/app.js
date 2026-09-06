@@ -93,7 +93,10 @@ maskForm.addEventListener("submit", async (event) => {
   setBusy(maskForm, true);
   setStatus("正在生成伪装节点");
   try {
-    const result = await postJson("/api/mask", { vlessUri: data.get("vlessUri") });
+    const result = await postJson("/api/mask", {
+      vlessUri: data.get("vlessUri"),
+      transport: data.get("transport") || "ws",
+    });
     if (typeof result.maskedUri !== "string" || typeof result.mappingToken !== "string") {
       throw new Error("服务返回的数据不完整");
     }
