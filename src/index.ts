@@ -118,14 +118,9 @@ async function handleMask(request: Request, env: Env): Promise<Response> {
     throw new AppError("invalid_vless", "VLESS URI 格式无效", 400);
   }
 
-  // 传输类型可选，缺省沿用 ws，保证旧客户端行为不变
-  const transportField = body["transport"] ?? "ws";
-  if (transportField !== "ws" && transportField !== "xhttp") {
-    throw new AppError("invalid_request", "字段 transport 仅支持 ws 或 xhttp", 400);
-  }
-  const transport = transportField as Transport;
+  const transport = parseTransportField(body);
 
-  const result = createMaskedVless(parsed, transport);
+  const result = createMaskedVless(parsed, transport ?? "ws");
   const mappingToken = await sealToken(result.mapping, env.TOKEN_KEY);
   return jsonResponse({ maskedUri: result.maskedUri, mappingToken });
 }
@@ -147,10 +142,22 @@ async function parseMappingToken(token: string, secret: string): Promise<Mapping
   return payload;
 }
 
+function parseTransportField(body: Record<string, unknown>): Transport | undefined {
+  const value = body["transport"];
+  if (value === undefined) {
+    return undefined;
+  }
+  if (value !== "ws" && value !== "xhttp") {
+    throw new AppError("invalid_request", "字段 transport 仅支持 ws 或 xhttp", 400);
+  }
+  return value;
+}
+
 async function handleCreateSubscription(request: Request, env: Env): Promise<Response> {
   const body = await readJson(request);
   const mappingToken = requireString(body, "mappingToken");
   const upstreamUrl = requireString(body, "upstreamUrl");
+  const transport = await parseTransportField(body);
   const mapping = await parseMappingToken(mappingToken, env.TOKEN_KEY);
   const normalizedUpstreamUrl = validateUpstreamUrl(upstreamUrl).href;
 
@@ -158,6 +165,7 @@ async function handleCreateSubscription(request: Request, env: Env): Promise<Res
     ...mapping,
     kind: "subscription",
     upstreamUrl: normalizedUpstreamUrl,
+    ...(transport === undefined ? {} : { transport }),
   };
   const token = await sealToken(payload, env.TOKEN_KEY);
   const subscriptionUrl = new URL(`/sub/${token}`, request.url).href;
@@ -186,7 +194,7 @@ async function handleSubscription(token: string, env: Env): Promise<Response> {
     realId: payload.realId,
     realQuery: payload.realQuery,
   };
-  const restored = await fetchAndRestore(payload.upstreamUrl, mapping);
+  const restored = await fetchAndRestore(payload.upstreamUrl, mapping, fetch, {}, payload.transport);
   return new Response(restored, {
     status: 200,
     headers: {

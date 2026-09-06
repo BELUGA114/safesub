@@ -121,12 +121,15 @@ subscriptionForm.addEventListener("submit", async (event) => {
   }
 
   const data = new FormData(subscriptionForm);
+  const transport = data.get("transport");
   setBusy(subscriptionForm, true);
   setStatus("正在生成最终订阅");
   try {
     const result = await postJson("/api/subscriptions", {
       mappingToken,
       upstreamUrl: data.get("upstreamUrl"),
+      // 空值表示跟随真实节点，不发送该字段
+      ...(transport ? { transport } : {}),
     });
     if (typeof result.subscriptionUrl !== "string") {
       throw new Error("服务返回的数据不完整");

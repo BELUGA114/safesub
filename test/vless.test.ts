@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  applyTransportOverride,
   createMaskedVless,
   parseRealVless,
   restoreVlessLine,
@@ -67,6 +68,30 @@ describe("createMaskedVless", () => {
   });
 });
 
+describe("applyTransportOverride", () => {
+  it("重写为 xhttp 时替换 type 并补充缺省 mode", () => {
+    expect(
+      applyTransportOverride("encryption=none&security=tls&type=ws&path=%2Fp&sni=h", "xhttp"),
+    ).toBe("encryption=none&security=tls&type=xhttp&path=%2Fp&sni=h&mode=auto");
+  });
+
+  it("重写为 ws 时替换 type 并移除 mode", () => {
+    expect(
+      applyTransportOverride("encryption=none&security=tls&type=xhttp&path=%2Fp&sni=h&mode=auto", "ws"),
+    ).toBe("encryption=none&security=tls&type=ws&path=%2Fp&sni=h");
+  });
+
+  it("保留已有的非缺省 mode", () => {
+    expect(
+      applyTransportOverride("security=tls&type=ws&mode=packet-up", "xhttp"),
+    ).toBe("security=tls&type=xhttp&mode=packet-up");
+  });
+
+  it("查询串缺少 type 时补充 type", () => {
+    expect(applyTransportOverride("security=tls&sni=h", "ws")).toBe("security=tls&sni=h&type=ws");
+  });
+});
+
 describe("restoreVlessLine", () => {
   const mapping = {
     v: 1 as const,
@@ -119,6 +144,16 @@ describe("restoreVlessLine", () => {
     expect(restoreVlessLine(input, xhttpMapping)).toEqual({
       matched: true,
       line: "vless://11111111-2222-4333-8444-555555555555@203.0.113.8:443?encryption=none&security=tls&type=xhttp&path=%2Fsecret&sni=origin.example&mode=auto#Edge",
+    });
+  });
+
+  it("指定传输覆盖时重写恢复后的查询串", () => {
+    const input =
+      "vless://aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa@203.0.113.8:2096?security=tls&type=ws#Edge";
+
+    expect(restoreVlessLine(input, mapping, "xhttp")).toEqual({
+      matched: true,
+      line: "vless://11111111-2222-4333-8444-555555555555@203.0.113.8:2096?encryption=none&security=tls&type=xhttp&path=%2Fsecret&sni=origin.example&mode=auto#Edge",
     });
   });
 });

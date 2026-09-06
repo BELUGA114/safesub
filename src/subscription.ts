@@ -1,6 +1,6 @@
 import { AppError } from "./errors";
 import type { MappingPayload } from "./token";
-import { restoreVlessLine } from "./vless";
+import { restoreVlessLine, type Transport } from "./vless";
 
 const MAX_UPSTREAM_URL_LENGTH = 2048;
 const MAX_SUBSCRIPTION_BYTES = 2 * 1024 * 1024;
@@ -130,10 +130,14 @@ export function encodeSubscription(text: string): string {
   return btoa(binary);
 }
 
-export function restoreSubscription(text: string, mapping: MappingPayload): RestoreResult {
+export function restoreSubscription(
+  text: string,
+  mapping: MappingPayload,
+  transport?: Transport,
+): RestoreResult {
   let matchCount = 0;
   const lines = text.split(/\r?\n/u).map((line) => {
-    const restored = restoreVlessLine(line, mapping);
+    const restored = restoreVlessLine(line, mapping, transport);
     if (restored.matched) {
       matchCount += 1;
     }
@@ -185,6 +189,7 @@ export async function fetchAndRestore(
   mapping: MappingPayload,
   fetcher: typeof fetch = fetch,
   options: FetchOptions = {},
+  transport?: Transport,
 ): Promise<string> {
   let currentUrl = validateUpstreamUrl(upstreamUrl);
   const controller = new AbortController();
@@ -213,7 +218,7 @@ export async function fetchAndRestore(
       }
 
       const encoded = await readLimitedBody(response);
-      const restored = restoreSubscription(decodeSubscription(encoded), mapping).text;
+      const restored = restoreSubscription(decodeSubscription(encoded), mapping, transport).text;
       if (new TextEncoder().encode(restored).byteLength > MAX_SUBSCRIPTION_BYTES) {
         throw new AppError("upstream_too_large", "恢复后的订阅过大", 502);
       }

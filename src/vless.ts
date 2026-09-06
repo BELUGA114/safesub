@@ -11,6 +11,26 @@ const DECOY_QUERIES = {
 
 export type Transport = keyof typeof DECOY_QUERIES;
 
+// 把真实查询串的传输参数重写为指定类型：替换 type、按目标处理 mode，其余参数原样保留。
+// 仅适用于同一端点同时提供 ws 与 xhttp 的情况；若两种传输路径不同，应直接在第一步填入对应传输的真实节点。
+export function applyTransportOverride(query: string, transport: Transport): string {
+  const parts = query.split("&").filter((part) => part !== "");
+  const rewritten = parts.map((part) =>
+    part.startsWith("type=") ? `type=${transport}` : part,
+  );
+  if (!rewritten.some((part) => part.startsWith("type="))) {
+    rewritten.push(`type=${transport}`);
+  }
+
+  let result = rewritten;
+  if (transport === "ws") {
+    result = rewritten.filter((part) => !part.startsWith("mode="));
+  } else if (!rewritten.some((part) => part.startsWith("mode="))) {
+    result = [...rewritten, "mode=auto"];
+  }
+  return result.join("&");
+}
+
 export interface ParsedRealVless {
   realId: string;
   realQuery: string;
@@ -68,7 +88,11 @@ export function createMaskedVless(
   };
 }
 
-export function restoreVlessLine(line: string, mapping: MappingPayload): RestoredLine {
+export function restoreVlessLine(
+  line: string,
+  mapping: MappingPayload,
+  transport?: Transport,
+): RestoredLine {
   if (!line.startsWith("vless://")) {
     return { matched: false, line };
   }
@@ -104,8 +128,10 @@ export function restoreVlessLine(line: string, mapping: MappingPayload): Restore
     return { matched: false, line };
   }
 
+  const realQuery =
+    transport === undefined ? mapping.realQuery : applyTransportOverride(mapping.realQuery, transport);
   return {
     matched: true,
-    line: `vless://${mapping.realId}@${hostPort}?${mapping.realQuery}${fragment}`,
+    line: `vless://${mapping.realId}@${hostPort}?${realQuery}${fragment}`,
   };
 }

@@ -1,3 +1,5 @@
+import type { Transport } from "./vless";
+
 const TOKEN_VERSION = "v1";
 const TOKEN_AAD = new TextEncoder().encode("safesub:v1");
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -17,6 +19,8 @@ export interface SubscriptionPayload {
   realId: string;
   realQuery: string;
   upstreamUrl: string;
+  // 可选：恢复时把节点传输重写为指定类型；缺省保持真实节点的原始查询串
+  transport?: Transport;
 }
 
 export type TokenPayload = MappingPayload | SubscriptionPayload;
@@ -84,7 +88,11 @@ function isPayload(value: unknown): value is TokenPayload {
   if (value.kind === "mapping") {
     return true;
   }
-  return value.kind === "subscription" && typeof value.upstreamUrl === "string";
+  if (value.kind !== "subscription" || typeof value.upstreamUrl !== "string") {
+    return false;
+  }
+  const transport = value.transport;
+  return transport === undefined || transport === "ws" || transport === "xhttp";
 }
 
 async function importKey(secret: string): Promise<CryptoKey> {

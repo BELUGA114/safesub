@@ -68,4 +68,21 @@ describe("token", () => {
 
     await expect(openToken(token, secret)).resolves.toEqual(payload);
   });
+
+  it("订阅负载的传输覆盖字段可往返且受校验", async () => {
+    const payload = {
+      ...mapping,
+      kind: "subscription" as const,
+      upstreamUrl: "https://subscription.example/list",
+      transport: "xhttp" as const,
+    };
+    const token = await sealToken(payload, secret);
+    await expect(openToken(token, secret)).resolves.toEqual(payload);
+
+    const invalid = await sealToken(
+      { ...payload, transport: "grpc" } as unknown as typeof payload,
+      secret,
+    );
+    await expect(openToken(invalid, secret)).rejects.toThrow("令牌负载无效");
+  });
 });

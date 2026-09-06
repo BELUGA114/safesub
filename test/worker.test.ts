@@ -94,6 +94,50 @@ describe("POST /api/subscriptions", () => {
     });
   });
 
+  it("将所选传输密封进订阅令牌并在恢复时重写查询串", async () => {
+    const maskResponse = await jsonRequest("/api/mask", { vlessUri: realUri });
+    const maskBody = (await maskResponse.json()) as { maskedUri: string; mappingToken: string };
+    const fakeId = new URL(maskBody.maskedUri).username;
+
+    const response = await jsonRequest("/api/subscriptions", {
+      mappingToken: maskBody.mappingToken,
+      upstreamUrl: "https://subscription.example/list",
+      transport: "xhttp",
+    });
+    const body = (await response.json()) as { subscriptionUrl: string };
+    const token = new URL(body.subscriptionUrl).pathname.slice("/sub/".length);
+    const payload = await openToken(token, secret);
+    expect(payload).toMatchObject({ kind: "subscription", transport: "xhttp" });
+
+    const upstreamLine =
+      `vless://${fakeId}@edge.example:2096?security=tls&type=ws#Edge`;
+    vi.stubGlobal("fetch", async () => new Response(encodeSubscription(upstreamLine)));
+
+    const subResponse = await worker.fetch(new Request(body.subscriptionUrl), env);
+    const restored = decodeSubscription(await subResponse.text());
+
+    expect(subResponse.status).toBe(200);
+    expect(restored).toContain("type=xhttp");
+    expect(restored).toContain("mode=auto");
+    expect(restored).toContain("path=%2Freal");
+  });
+
+  it("拒绝订阅接口不支持的传输类型", async () => {
+    const maskResponse = await jsonRequest("/api/mask", { vlessUri: realUri });
+    const { mappingToken } = (await maskResponse.json()) as { mappingToken: string };
+
+    const response = await jsonRequest("/api/subscriptions", {
+      mappingToken,
+      upstreamUrl: "https://subscription.example/list",
+      transport: "grpc",
+    });
+
+    expect(response.status).toBe(400);
+    await expect(response.json()).resolves.toMatchObject({
+      error: { code: "invalid_request" },
+    });
+  });
+
   it("拒绝把订阅令牌当作映射令牌", async () => {
     const token = await sealToken(
       {
@@ -142,6 +186,31 @@ describe("GET /sub/:token", () => {
     expect(response.headers.get("cache-control")).toBe("no-store");
     expect(restored).toBe(
       "vless://11111111-2222-4333-8444-555555555555@edge.example:2096?encryption=none&security=tls&type=ws&sni=origin.example#Edge",
+    );
+  });
+
+  it("恢复第三方返回的 xhttp 传输伪装行", async () => {
+    const mapping: MappingPayload = {
+      v: 1,
+      kind: "mapping",
+      fakeId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+      realId: "11111111-2222-4333-8444-555555555555",
+      realQuery: "encryption=none&security=tls&type=xhttp&sni=origin.example&mode=auto",
+    };
+    const token = await sealToken(
+      { ...mapping, kind: "subscription", upstreamUrl: "https://subscription.example/list" },
+      secret,
+    );
+    const upstreamLine =
+      "vless://aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa@edge.example:443?security=tls&type=xhttp&mode=auto#Edge";
+    vi.stubGlobal("fetch", async () => new Response(encodeSubscription(upstreamLine)));
+
+    const response = await worker.fetch(new Request(`https://safesub.example/sub/${token}`), env);
+    const restored = decodeSubscription(await response.text());
+
+    expect(response.status).toBe(200);
+    expect(restored).toBe(
+      "vless://11111111-2222-4333-8444-555555555555@edge.example:443?encryption=none&security=tls&type=xhttp&sni=origin.example&mode=auto#Edge",
     );
   });
 

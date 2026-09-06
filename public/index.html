@@ -90,6 +90,12 @@
                 placeholder="https://..."
                 required
               >
+              <label for="final-transport">最终订阅传输</label>
+              <select id="final-transport" name="transport">
+                <option value="" selected>跟随真实节点</option>
+                <option value="ws">WebSocket（type=ws）</option>
+                <option value="xhttp">XHTTP（type=xhttp）</option>
+              </select>
               <button id="create-subscription" class="primary-button" type="submit" disabled>
                 生成最终订阅
               </button>
