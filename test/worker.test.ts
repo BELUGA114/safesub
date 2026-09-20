@@ -161,6 +161,67 @@ describe("POST /api/subscriptions", () => {
   });
 });
 
+describe("POST /api/direct", () => {
+  it("用内置服务商一步生成最终订阅，诱饵走 ws 而最终传输独立可选", async () => {
+    const realXhttp =
+      "vless://11111111-2222-4333-8444-555555555555@origin.example:443?encryption=none&security=tls&type=xhttp&path=%2Freal&sni=origin.example&mode=auto#Private";
+    const response = await jsonRequest("/api/direct", { vlessUri: realXhttp, transport: "xhttp" });
+    const body = (await response.json()) as { subscriptionUrl: string };
+    const token = new URL(body.subscriptionUrl).pathname.slice("/sub/".length);
+    const payload = await openToken(token, secret);
+
+    expect(response.status).toBe(200);
+    expect(payload.kind).toBe("subscription");
+    // 诱饵提交给 danfeng 的是 ws；最终订阅传输独立为 xhttp
+    expect(payload).toMatchObject({ transport: "xhttp" });
+    if (payload.kind !== "subscription") {
+      throw new Error("期望订阅令牌");
+    }
+    const upstream = new URL(payload.upstreamUrl);
+    expect(upstream.origin + upstream.pathname).toBe("https://sub.danfeng.eu.org/sub");
+    expect(upstream.searchParams.get("uuid")).toBe(payload.fakeId);
+    expect(upstream.searchParams.get("type")).toBe("ws");
+
+    // danfeng 会返回带其自身 host:port 的 ws 诱饵行，恢复时改回真实 UUID 并按最终传输重写为 xhttp
+    const upstreamLine = `vless://${payload.fakeId}@edge.danfeng:2096?encryption=none&security=tls&type=ws&host=placeholder.invalid&path=%2Fsafesub&sni=placeholder.invalid#SafeSub`;
+    vi.stubGlobal("fetch", async () => new Response(encodeSubscription(upstreamLine)));
+
+    const subResponse = await worker.fetch(new Request(body.subscriptionUrl), env);
+    const restored = decodeSubscription(await subResponse.text());
+
+    expect(subResponse.status).toBe(200);
+    expect(restored).toContain("11111111-2222-4333-8444-555555555555@edge.danfeng:2096");
+    expect(restored).toContain("type=xhttp");
+    expect(restored).toContain("mode=auto");
+    expect(restored).toContain("path=%2Freal");
+    expect(restored).not.toContain("placeholder.invalid");
+  });
+
+  it("缺省最终传输时跟随真实节点", async () => {
+    const response = await jsonRequest("/api/direct", { vlessUri: realUri });
+    const body = (await response.json()) as { subscriptionUrl: string };
+    const token = new URL(body.subscriptionUrl).pathname.slice("/sub/".length);
+    const payload = await openToken(token, secret);
+
+    expect(response.status).toBe(200);
+    expect(payload).not.toHaveProperty("transport");
+  });
+
+  it("拒绝未知服务商", async () => {
+    const response = await jsonRequest("/api/direct", { vlessUri: realUri, provider: "nope" });
+
+    expect(response.status).toBe(400);
+    await expect(response.json()).resolves.toMatchObject({ error: { code: "unknown_provider" } });
+  });
+
+  it("以稳定 JSON 错误拒绝非法 VLESS", async () => {
+    const response = await jsonRequest("/api/direct", { vlessUri: "not-vless" });
+
+    expect(response.status).toBe(400);
+    await expect(response.json()).resolves.toMatchObject({ error: { code: "invalid_vless" } });
+  });
+});
+
 describe("GET /sub/:token", () => {
   it("返回普通客户端可直接使用的真实 Base64 订阅", async () => {
     const mapping: MappingPayload = {

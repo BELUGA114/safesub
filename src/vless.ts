@@ -3,7 +3,7 @@ import type { MappingPayload } from "./token";
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 // 诱饵查询串只需语法有效且不泄露真实字段；第三方服务对 type 的支持不同，按用户选择生成。
-const DECOY_QUERIES = {
+export const DECOY_QUERIES = {
   ws: "encryption=none&security=tls&type=ws&host=placeholder.invalid&path=%2Fsafesub&sni=placeholder.invalid",
   xhttp:
     "encryption=none&security=tls&type=xhttp&host=placeholder.invalid&path=%2Fsafesub&sni=placeholder.invalid&mode=auto",

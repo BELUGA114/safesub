@@ -24,6 +24,51 @@
     </header>
 
     <main>
+      <section class="direct-panel" aria-labelledby="direct-title">
+        <div class="step-content">
+          <div class="step-heading">
+            <div>
+              <p class="step-label">一步生成</p>
+              <h2 id="direct-title">用内置服务商直接生成</h2>
+            </div>
+          </div>
+          <p class="step-hint">选择内置第三方服务商，输入真实 VLESS 即可直接拿到最终订阅链接，无需手动跑一趟服务商站点。</p>
+
+          <form id="direct-form">
+            <label for="direct-vless-uri">真实 VLESS</label>
+            <textarea
+              id="direct-vless-uri"
+              name="vlessUri"
+              rows="5"
+              spellcheck="false"
+              autocomplete="off"
+              placeholder="vless://..."
+              required
+            ></textarea>
+            <label for="direct-provider">服务商</label>
+            <select id="direct-provider" name="provider">
+              <option value="danfeng" selected>danfeng（仅支持 ws 诱饵）</option>
+            </select>
+            <label for="direct-transport">最终订阅传输</label>
+            <select id="direct-transport" name="transport">
+              <option value="" selected>跟随真实节点</option>
+              <option value="ws">WebSocket（type=ws）</option>
+              <option value="xhttp">XHTTP（type=xhttp）</option>
+            </select>
+            <button class="primary-button" type="submit">直接生成最终订阅</button>
+          </form>
+
+          <div id="direct-result" class="result" hidden>
+            <label for="direct-subscription-url">最终订阅 URL</label>
+            <div class="copy-row">
+              <input id="direct-subscription-url" type="text" readonly>
+              <button class="copy-button" type="button" data-copy-target="direct-subscription-url">复制</button>
+            </div>
+            <p class="credential-warning">此链接可直接读取真实订阅，请按凭证保管。</p>
+          </div>
+        </div>
+      </section>
+
       <div class="workflow" aria-label="订阅生成流程">
         <section class="step" aria-labelledby="mask-title">
           <div class="step-marker" aria-hidden="true">1</div>

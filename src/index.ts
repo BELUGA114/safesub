@@ -1,4 +1,5 @@
 import { AppError } from "./errors";
+import { DEFAULT_PROVIDER_ID, getProvider } from "./providers";
 import { fetchAndRestore, validateUpstreamUrl } from "./subscription";
 import {
   openToken,
@@ -125,6 +126,39 @@ async function handleMask(request: Request, env: Env): Promise<Response> {
   return jsonResponse({ maskedUri: result.maskedUri, mappingToken });
 }
 
+async function handleDirect(request: Request, env: Env): Promise<Response> {
+  const body = await readJson(request);
+  const vlessUri = requireString(body, "vlessUri");
+  if (vlessUri.length > MAX_VLESS_URI_LENGTH) {
+    throw new AppError("invalid_vless", "VLESS URI 过长", 400);
+  }
+
+  let parsed: ReturnType<typeof parseRealVless>;
+  try {
+    parsed = parseRealVless(vlessUri);
+  } catch {
+    throw new AppError("invalid_vless", "VLESS URI 格式无效", 400);
+  }
+
+  // transport 是“最终订阅传输”（可选，语义同 /api/subscriptions）；诱饵传输由服务商决定。
+  const transport = parseTransportField(body);
+  const providerId = parseProviderField(body);
+  const provider = getProvider(providerId);
+
+  const { mapping } = createMaskedVless(parsed, provider.decoyTransport);
+  const upstreamUrl = validateUpstreamUrl(provider.buildUpstreamUrl(mapping.fakeId)).href;
+
+  const payload: SubscriptionPayload = {
+    ...mapping,
+    kind: "subscription",
+    upstreamUrl,
+    ...(transport === undefined ? {} : { transport }),
+  };
+  const token = await sealToken(payload, env.TOKEN_KEY);
+  const subscriptionUrl = new URL(`/sub/${token}`, request.url).href;
+  return jsonResponse({ subscriptionUrl });
+}
+
 async function parseMappingToken(token: string, secret: string): Promise<MappingPayload> {
   if (token.length > MAX_TOKEN_LENGTH) {
     throw new AppError("invalid_token", "映射令牌无效", 400);
@@ -151,6 +185,17 @@ function parseTransportField(body: Record<string, unknown>): Transport | undefin
     throw new AppError("invalid_request", "字段 transport 仅支持 ws 或 xhttp", 400);
   }
   return value;
+}
+
+function parseProviderField(body: Record<string, unknown>): string {
+  const value = body["provider"];
+  if (value === undefined) {
+    return DEFAULT_PROVIDER_ID;
+  }
+  if (typeof value !== "string" || value.trim() === "") {
+    throw new AppError("invalid_request", "字段 provider 必须是非空字符串", 400);
+  }
+  return value.trim();
 }
 
 async function handleCreateSubscription(request: Request, env: Env): Promise<Response> {
@@ -218,6 +263,12 @@ async function route(request: Request, env: Env): Promise<Response> {
       throw new AppError("method_not_allowed", "此接口仅支持 POST", 405);
     }
     return handleCreateSubscription(request, env);
+  }
+  if (url.pathname === "/api/direct") {
+    if (request.method !== "POST") {
+      throw new AppError("method_not_allowed", "此接口仅支持 POST", 405);
+    }
+    return handleDirect(request, env);
   }
   if (url.pathname.startsWith("/sub/")) {
     if (request.method !== "GET") {

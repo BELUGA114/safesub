@@ -1,5 +1,8 @@
 const STORAGE_KEY = "safesub.mappingToken.v1";
 
+const directForm = document.querySelector("#direct-form");
+const directResult = document.querySelector("#direct-result");
+const directSubscriptionUrl = document.querySelector("#direct-subscription-url");
 const maskForm = document.querySelector("#mask-form");
 const subscriptionForm = document.querySelector("#subscription-form");
 const maskedResult = document.querySelector("#masked-result");
@@ -86,6 +89,32 @@ async function copyValue(targetId, button) {
     button.textContent = original;
   }, 1400);
 }
+
+directForm.addEventListener("submit", async (event) => {
+  event.preventDefault();
+  const data = new FormData(directForm);
+  const transport = data.get("transport");
+  setBusy(directForm, true);
+  setStatus("正在直接生成最终订阅");
+  try {
+    const result = await postJson("/api/direct", {
+      vlessUri: data.get("vlessUri"),
+      provider: data.get("provider"),
+      // 空值表示跟随真实节点，不发送该字段
+      ...(transport ? { transport } : {}),
+    });
+    if (typeof result.subscriptionUrl !== "string") {
+      throw new Error("服务返回的数据不完整");
+    }
+    directSubscriptionUrl.value = result.subscriptionUrl;
+    directResult.hidden = false;
+    setStatus("最终订阅已生成", "success");
+  } catch (error) {
+    setStatus(error instanceof Error ? error.message : "生成最终订阅失败", "error");
+  } finally {
+    setBusy(directForm, false);
+  }
+});
 
 maskForm.addEventListener("submit", async (event) => {
   event.preventDefault();

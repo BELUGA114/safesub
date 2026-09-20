@@ -292,6 +292,23 @@ summary {
   line-height: 1.5;
 }
 
+.direct-panel {
+  margin-bottom: 44px;
+  padding-bottom: 40px;
+  border-bottom: 1px solid var(--line);
+}
+
+.direct-panel .step-content {
+  padding: 0;
+}
+
+.step-hint {
+  margin: 12px 0 0;
+  color: #5a6b67;
+  font-size: 0.84rem;
+  line-height: 1.6;
+}
+
 .status {
   min-height: 24px;
   margin: 28px 0 0 58px;
