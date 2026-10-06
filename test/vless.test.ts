@@ -22,15 +22,26 @@ function appErrorCode(run: () => void): string | undefined {
 const realUri =
   "vless://11111111-2222-4333-8444-555555555555@origin.example:8443?encryption=none&security=tls&type=ws&host=origin.example&path=%2Fsecret&sni=origin.example#Private%20Node";
 
+// VLESS 层加密（VLESS Encryption）的密钥段按 RawURL Base64 编码，不带 "=" 填充：
+// X25519 公钥 32 字节编码成 43 字符，ML-KEM-768 公钥 1184 字节编码成 1579 字符。
+const x25519Key = "P15JKtXLmzttnqUW4cLO205qNQhvh_KbP8PtQ6Z7uUs";
+const mlkem768Key = "A".repeat(1579);
+// Xray 与 mihomo 只按下标解析前三段，所以客户端取值固定是 scheme.mode.rtt。
+const vlessEncryption = `mlkem768x25519plus.native.0rtt.${x25519Key}`;
+
 describe("assertEncryptedTransport", () => {
   it.each([
     "encryption=none&security=tls&type=ws&sni=origin.example",
     "encryption=none&security=reality&type=tcp&sni=origin.example",
-    "security=none&encryption=mlkem768x25519plus.native.0rtt.s3cret&type=ws",
+    `security=none&encryption=${vlessEncryption}&type=ws`,
+    `security=none&encryption=mlkem768x25519plus.xorpub.1rtt.${x25519Key}&type=ws`,
+    `security=none&encryption=mlkem768x25519plus.random.0rtt.${x25519Key}&type=ws`,
+    `security=none&encryption=mlkem768x25519plus.native.0rtt.100-111-1111.75-0-111.${x25519Key}&type=ws`,
+    `security=none&encryption=mlkem768x25519plus.native.0rtt.${mlkem768Key}&type=ws`,
     "encryption=none&security=tls&allowInsecure=0",
     "encryption=none&security=tls&allowInsecure=false",
     "encryption=none&security=reality&allowInsecure=1",
-    "security=tls&allowInsecure=1&encryption=mlkem768x25519plus.native.0rtt.s3cret",
+    `security=tls&allowInsecure=1&encryption=${vlessEncryption}`,
   ])("接受加密传输：%s", (query) => {
     expect(() => assertEncryptedTransport(query)).not.toThrow();
   });
@@ -44,10 +55,30 @@ describe("assertEncryptedTransport", () => {
     ["security 大小写不匹配", "encryption=none&security=TLS&type=ws"],
     ["只写了 security=none", "security=none"],
     ["encryption 全为 none 时不算加密", "security=none&encryption=None"],
+    ["encryption 为空值", "security=none&encryption=&type=ws"],
+    ["encryption 为空白包裹的 none", "security=none&encryption=%20none&type=ws"],
+    ["encryption 为无法识别的字符串", "security=none&encryption=foo&type=ws"],
+    ["encryption 缺少密钥段", "security=none&encryption=mlkem768x25519plus.native.0rtt&type=ws"],
+    [
+      "encryption 用了服务端的 rtt 取值",
+      `security=none&encryption=mlkem768x25519plus.native.600s.${x25519Key}&type=ws`,
+    ],
+    [
+      "encryption 的 mode 大小写不匹配",
+      `security=none&encryption=mlkem768x25519plus.NATIVE.0rtt.${x25519Key}&type=ws`,
+    ],
+    [
+      "encryption 的密钥带 Base64 填充",
+      `security=none&encryption=mlkem768x25519plus.native.0rtt.${x25519Key}%3D&type=ws`,
+    ],
+    [
+      "encryption 的密钥长度不合规",
+      `security=none&encryption=mlkem768x25519plus.native.0rtt.${x25519Key.slice(0, 42)}&type=ws`,
+    ],
     ["重复 security 混入 none", "encryption=none&security=tls&security=none&type=ws"],
     [
       "重复 encryption 混入 none",
-      "security=none&encryption=mlkem768x25519plus.native.0rtt.s3cret&encryption=none",
+      `security=none&encryption=${vlessEncryption}&encryption=none`,
     ],
   ];
 
@@ -59,6 +90,13 @@ describe("assertEncryptedTransport", () => {
     ["allowInsecure=1", "encryption=none&security=tls&allowInsecure=1&type=ws"],
     ["allowInsecure=true", "encryption=none&security=tls&allowInsecure=true&type=ws"],
     ["allowInsecure 为空值", "encryption=none&security=tls&allowInsecure=&type=ws"],
+    // 参数名大小写由各家客户端自行决定，这里按大小写不敏感匹配，宁可多拦。
+    ["参数名全小写", "encryption=none&security=tls&allowinsecure=1&type=ws"],
+    ["参数名首字母大写", "encryption=none&security=tls&AllowInsecure=1&type=ws"],
+    ["参数名全大写", "encryption=none&security=tls&ALLOWINSECURE=true&type=ws"],
+    ["参数名带空白", "encryption=none&security=tls&allowInsecure%20=1&type=ws"],
+    // encryption 取值不合规时不再被视为 VLESS 层加密，也就不能再豁免 allowInsecure。
+    ["encryption 取值无效", "security=tls&encryption=foo&allowInsecure=1&type=ws"],
   ];
 
   it.each(allowInsecureCases)("以 allow_insecure 拒绝跳过证书校验：%s", (_name, query) => {
@@ -97,8 +135,7 @@ describe("parseRealVless", () => {
   });
 
   it("接受启用 VLESS 层加密的真实节点", () => {
-    const encryptedUri =
-      "vless://11111111-2222-4333-8444-555555555555@origin.example:443?encryption=mlkem768x25519plus.native.0rtt.s3cret&security=none&type=ws#Private";
+    const encryptedUri = `vless://11111111-2222-4333-8444-555555555555@origin.example:443?encryption=${vlessEncryption}&security=none&type=ws#Private`;
     expect(parseRealVless(encryptedUri).realQuery).toContain("encryption=mlkem768x25519plus");
   });
 
@@ -108,9 +145,21 @@ describe("parseRealVless", () => {
     expect(appErrorCode(() => parseRealVless(plaintextUri))).toBe("insecure_transport");
   });
 
+  it("以 insecure_transport 拒绝 encryption 取值无效的真实节点", () => {
+    const fakeEncryptionUri =
+      "vless://11111111-2222-4333-8444-555555555555@origin.example:8443?encryption=foo&security=none&type=ws#Private";
+    expect(appErrorCode(() => parseRealVless(fakeEncryptionUri))).toBe("insecure_transport");
+  });
+
   it("以 allow_insecure 拒绝跳过证书校验的真实节点", () => {
     const insecureUri =
       "vless://11111111-2222-4333-8444-555555555555@origin.example:8443?encryption=none&security=tls&allowInsecure=1&type=ws&sni=origin.example#Private";
+    expect(appErrorCode(() => parseRealVless(insecureUri))).toBe("allow_insecure");
+  });
+
+  it("以 allow_insecure 拒绝参数名大小写不同的 allowInsecure", () => {
+    const insecureUri =
+      "vless://11111111-2222-4333-8444-555555555555@origin.example:8443?encryption=none&security=tls&allowinsecure=1&type=ws&sni=origin.example#Private";
     expect(appErrorCode(() => parseRealVless(insecureUri))).toBe("allow_insecure");
   });
 });

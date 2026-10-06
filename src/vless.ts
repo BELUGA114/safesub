@@ -49,18 +49,78 @@ export interface RestoredLine {
 
 // security 白名单：只有这两个取值代表传输层已加密。
 const ENCRYPTED_SECURITY_VALUES: readonly string[] = ["tls", "reality"];
-// VLESS 层加密的哨兵值。encryption=none 是 VLESS 协议的必填长相，不代表任何加密。
-const NO_VLESS_ENCRYPTION = "none";
 
-// 单次 allowInsecure 取值是否视为“已开启”。只有明确的 0/false 才算关闭，其余一律按开启处理。
+// VLESS 层加密（VLESS Encryption）取值的形状，与 Xray-core、mihomo 的解析逻辑一致：
+// mlkem768x25519plus.<mode>.<rtt>.<可选的 padding 参数...>.<密钥...>
+const VLESS_ENCRYPTION_SCHEME = "mlkem768x25519plus";
+const VLESS_ENCRYPTION_MODES: readonly string[] = ["native", "xorpub", "random"];
+// 客户端 encryption 固定用 0rtt/1rtt；600s 这类秒数只出现在服务端 decryption 里。
+const VLESS_ENCRYPTION_RTTS: readonly string[] = ["0rtt", "1rtt"];
+// 密钥段是 RawURL Base64（不带 "=" 填充），解码后为 X25519 公钥或 ML-KEM-768 公钥。
+const ENCRYPTION_KEY_BYTE_LENGTHS: readonly number[] = [32, 1184];
+const RAW_BASE64URL_PATTERN = /^[A-Za-z0-9_-]+$/;
+// Xray 以“段长不足 20 即 padding”区分密钥与 padding，padding 参数形如 100-111-1111 的长度/间隔区间，内容不校验。
+const ENCRYPTION_PADDING_MAX_LENGTH = 19;
+// allowInsecure 的参数名比较基准；客户端对参数名的大小写处理并不统一。
+const ALLOW_INSECURE_PARAM = "allowinsecure";
+
+// 单次 allowInsecure 取值是否视为“已开启”。只有明确的 0/false 才算关闭，其余（含空值）一律按开启处理。
 function isAllowInsecureEnabled(value: string): boolean {
   const normalized = value.toLowerCase();
   return normalized !== "0" && normalized !== "false";
 }
 
-// 默认拒绝地校验查询串是否属于加密传输：security 命中 TLS 白名单，或 encryption 表示 VLESS 层加密。
-// 取值逐字比对、不做大小写折叠，重复同名参数逐条检查，任一条不合规即拒绝，
-// 杜绝“本服务读第一个、客户端取最后一个”的缝隙。
+// RawURL Base64 解码后的字节数；含非法字符（含 "=" 填充）或长度非法时返回 -1。
+// 不直接用 atob：它容忍填充与 +/ 等 Xray 会拒绝的写法。
+function rawBase64UrlByteLength(value: string): number {
+  if (!RAW_BASE64URL_PATTERN.test(value) || value.length % 4 === 1) {
+    return -1;
+  }
+  return Math.floor((value.length * 3) / 4);
+}
+
+// encryption 取值是否真的是 VLESS 层加密。只认 Xray 与 mihomo 都能解析的形状：
+// 否则任意非 none 字符串（含空值与纯空白）都会被当成“已加密”，从而同时绕开 TLS 与 allowInsecure 校验。
+function isVlessEncryption(value: string): boolean {
+  const segments = value.split(".");
+  if (segments.length < 4 || segments[0] !== VLESS_ENCRYPTION_SCHEME) {
+    return false;
+  }
+  if (!VLESS_ENCRYPTION_MODES.includes(segments[1] ?? "")) {
+    return false;
+  }
+  if (!VLESS_ENCRYPTION_RTTS.includes(segments[2] ?? "")) {
+    return false;
+  }
+
+  let keyCount = 0;
+  for (const segment of segments.slice(3)) {
+    if (segment.length <= ENCRYPTION_PADDING_MAX_LENGTH) {
+      continue;
+    }
+    if (!ENCRYPTION_KEY_BYTE_LENGTHS.includes(rawBase64UrlByteLength(segment))) {
+      return false;
+    }
+    keyCount += 1;
+  }
+  // 只有 padding、没有密钥段时 Xray 会报错，这里同样不算加密。
+  return keyCount > 0;
+}
+
+// 是否存在任意写法（含大小写与空白差异）的 allowInsecure。客户端对参数名的匹配并不统一，
+// 这里宽进严出：一旦出现就按“跳过证书校验”处理。
+function hasAllowInsecure(params: URLSearchParams): boolean {
+  for (const [name, value] of params) {
+    if (name.trim().toLowerCase() === ALLOW_INSECURE_PARAM && isAllowInsecureEnabled(value)) {
+      return true;
+    }
+  }
+  return false;
+}
+
+// 默认拒绝地校验查询串是否属于加密传输：security 命中 TLS 白名单，或 encryption 是真正的 VLESS 层加密。
+// security 与 encryption 的取值逐字比对、不做大小写折叠：这两个方向是放行，而客户端一旦不认识该拼写
+// 就会退回明文，所以宁可不认；重复同名参数逐条检查，杜绝“本服务读第一个、客户端取最后一个”的缝隙。
 export function assertEncryptedTransport(query: string): void {
   const params = new URLSearchParams(query);
   const securityValues = params.getAll("security");
@@ -70,13 +130,12 @@ export function assertEncryptedTransport(query: string): void {
     securityValues.length > 0 &&
     securityValues.every((value) => ENCRYPTED_SECURITY_VALUES.includes(value));
   const vlessEncrypted =
-    encryptionValues.length > 0 &&
-    encryptionValues.every((value) => value.toLowerCase() !== NO_VLESS_ENCRYPTION);
+    encryptionValues.length > 0 && encryptionValues.every(isVlessEncryption);
 
   if (!tlsProtected && !vlessEncrypted) {
     throw new AppError(
       "insecure_transport",
-      "出于安全考虑，仅接受 security=tls、security=reality 或启用 VLESS 层加密（encryption 非 none）的真实节点",
+      "出于安全考虑，仅接受 security=tls、security=reality 或启用 VLESS 层加密（mlkem768x25519plus）的真实节点",
       400,
     );
   }
@@ -84,7 +143,7 @@ export function assertEncryptedTransport(query: string): void {
   // allowInsecure 只在 TLS 是该节点唯一的加密与认证手段时才构成失守：
   // reality 自带服务端认证，VLESS 层加密的握手也不依赖 CA 证书，两者跳过证书校验都不会让攻击者获得解密能力。
   const tlsIsSoleProtection = securityValues.includes("tls") && !vlessEncrypted;
-  if (tlsIsSoleProtection && params.getAll("allowInsecure").some(isAllowInsecureEnabled)) {
+  if (tlsIsSoleProtection && hasAllowInsecure(params)) {
     throw new AppError(
       "allow_insecure",
       "出于安全考虑，不接受 allowInsecure 的真实节点",
