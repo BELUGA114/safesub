@@ -71,6 +71,28 @@ describe("POST /api/mask", () => {
       error: { code: "invalid_vless" },
     });
   });
+
+  it("拒绝未加密的真实节点", async () => {
+    const plaintextUri =
+      "vless://11111111-2222-4333-8444-555555555555@origin.example:8443?encryption=none&security=none&type=ws&path=%2Freal#Private";
+    const response = await jsonRequest("/api/mask", { vlessUri: plaintextUri });
+
+    expect(response.status).toBe(400);
+    await expect(response.json()).resolves.toMatchObject({
+      error: { code: "insecure_transport" },
+    });
+  });
+
+  it("拒绝跳过证书校验的真实节点", async () => {
+    const insecureUri =
+      "vless://11111111-2222-4333-8444-555555555555@origin.example:8443?encryption=none&security=tls&allowInsecure=1&type=ws&sni=origin.example#Private";
+    const response = await jsonRequest("/api/mask", { vlessUri: insecureUri });
+
+    expect(response.status).toBe(400);
+    await expect(response.json()).resolves.toMatchObject({
+      error: { code: "allow_insecure" },
+    });
+  });
 });
 
 describe("POST /api/subscriptions", () => {
@@ -219,6 +241,17 @@ describe("POST /api/direct", () => {
 
     expect(response.status).toBe(400);
     await expect(response.json()).resolves.toMatchObject({ error: { code: "invalid_vless" } });
+  });
+
+  it("拒绝未加密的真实节点", async () => {
+    const plaintextUri =
+      "vless://11111111-2222-4333-8444-555555555555@origin.example:8443?encryption=none&security=none&type=ws&path=%2Freal#Private";
+    const response = await jsonRequest("/api/direct", { vlessUri: plaintextUri });
+
+    expect(response.status).toBe(400);
+    await expect(response.json()).resolves.toMatchObject({
+      error: { code: "insecure_transport" },
+    });
   });
 });
 

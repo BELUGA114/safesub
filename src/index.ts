@@ -7,7 +7,13 @@ import {
   type MappingPayload,
   type SubscriptionPayload,
 } from "./token";
-import { createMaskedVless, parseRealVless, type Transport } from "./vless";
+import {
+  assertEncryptedTransport,
+  createMaskedVless,
+  parseRealVless,
+  type ParsedRealVless,
+  type Transport,
+} from "./vless";
 
 const MAX_JSON_BODY_BYTES = 16 * 1024;
 const MAX_VLESS_URI_LENGTH = 4096;
@@ -105,6 +111,19 @@ function requireString(body: Record<string, unknown>, field: string): string {
   return value.trim();
 }
 
+// parseRealVless 的语法错误统一压成 invalid_vless；加密策略抛出的 AppError 原样透传，
+// 否则用户只会看到“VLESS URI 格式无效”，不知道是被安全策略拦下的。
+function parseRealVlessOrThrow(uri: string): ParsedRealVless {
+  try {
+    return parseRealVless(uri);
+  } catch (error: unknown) {
+    if (error instanceof AppError) {
+      throw error;
+    }
+    throw new AppError("invalid_vless", "VLESS URI 格式无效", 400);
+  }
+}
+
 async function handleMask(request: Request, env: Env): Promise<Response> {
   const body = await readJson(request);
   const vlessUri = requireString(body, "vlessUri");
@@ -112,12 +131,7 @@ async function handleMask(request: Request, env: Env): Promise<Response> {
     throw new AppError("invalid_vless", "VLESS URI 过长", 400);
   }
 
-  let parsed: ReturnType<typeof parseRealVless>;
-  try {
-    parsed = parseRealVless(vlessUri);
-  } catch {
-    throw new AppError("invalid_vless", "VLESS URI 格式无效", 400);
-  }
+  const parsed = parseRealVlessOrThrow(vlessUri);
 
   const transport = parseTransportField(body);
 
@@ -133,12 +147,7 @@ async function handleDirect(request: Request, env: Env): Promise<Response> {
     throw new AppError("invalid_vless", "VLESS URI 过长", 400);
   }
 
-  let parsed: ReturnType<typeof parseRealVless>;
-  try {
-    parsed = parseRealVless(vlessUri);
-  } catch {
-    throw new AppError("invalid_vless", "VLESS URI 格式无效", 400);
-  }
+  const parsed = parseRealVlessOrThrow(vlessUri);
 
   // transport 是“最终订阅传输”（可选，语义同 /api/subscriptions）；诱饵传输由服务商决定。
   const transport = parseTransportField(body);

@@ -112,9 +112,12 @@ export function parseRealVless(uri: string): ParsedRealVless {
     throw new Error("VLESS URI 缺少有效的 UUID、主机、端口或查询参数");
   }
 
+  const realQuery = parsed.search.slice(1);
+  assertEncryptedTransport(realQuery);
+
   return {
     realId: parsed.username.toLowerCase(),
-    realQuery: parsed.search.slice(1),
+    realQuery,
   };
 }
 

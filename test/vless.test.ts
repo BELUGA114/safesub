@@ -89,6 +89,30 @@ describe("parseRealVless", () => {
   ])("拒绝无效真实节点：%s", (value) => {
     expect(() => parseRealVless(value)).toThrow("VLESS");
   });
+
+  it("接受 reality 传输的真实节点", () => {
+    const realityUri =
+      "vless://11111111-2222-4333-8444-555555555555@origin.example:443?encryption=none&security=reality&type=tcp&sni=origin.example&pbk=abc#Private";
+    expect(parseRealVless(realityUri).realQuery).toContain("security=reality");
+  });
+
+  it("接受启用 VLESS 层加密的真实节点", () => {
+    const encryptedUri =
+      "vless://11111111-2222-4333-8444-555555555555@origin.example:443?encryption=mlkem768x25519plus.native.0rtt.s3cret&security=none&type=ws#Private";
+    expect(parseRealVless(encryptedUri).realQuery).toContain("encryption=mlkem768x25519plus");
+  });
+
+  it("以 insecure_transport 拒绝未加密的真实节点", () => {
+    const plaintextUri =
+      "vless://11111111-2222-4333-8444-555555555555@origin.example:8443?encryption=none&security=none&type=ws&path=%2Freal#Private";
+    expect(appErrorCode(() => parseRealVless(plaintextUri))).toBe("insecure_transport");
+  });
+
+  it("以 allow_insecure 拒绝跳过证书校验的真实节点", () => {
+    const insecureUri =
+      "vless://11111111-2222-4333-8444-555555555555@origin.example:8443?encryption=none&security=tls&allowInsecure=1&type=ws&sni=origin.example#Private";
+    expect(appErrorCode(() => parseRealVless(insecureUri))).toBe("allow_insecure");
+  });
 });
 
 describe("createMaskedVless", () => {
