@@ -181,6 +181,30 @@ describe("POST /api/subscriptions", () => {
     expect(response.status).toBe(400);
     await expect(response.json()).resolves.toMatchObject({ error: { code: "invalid_token_type" } });
   });
+
+  it("拒绝封存了明文节点的存量映射令牌", async () => {
+    // 模拟升级前签发的映射令牌：它自包含且无有效期，仍可能留在用户浏览器的 localStorage 里。
+    const legacyToken = await sealToken(
+      {
+        v: 1,
+        kind: "mapping",
+        fakeId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+        realId: "11111111-2222-4333-8444-555555555555",
+        realQuery: "encryption=none&security=none&type=ws&path=%2Freal",
+      },
+      secret,
+    );
+
+    const response = await jsonRequest("/api/subscriptions", {
+      mappingToken: legacyToken,
+      upstreamUrl: "https://subscription.example/list",
+    });
+
+    expect(response.status).toBe(400);
+    await expect(response.json()).resolves.toMatchObject({
+      error: { code: "insecure_transport" },
+    });
+  });
 });
 
 describe("POST /api/direct", () => {

@@ -213,6 +213,9 @@ async function handleCreateSubscription(request: Request, env: Env): Promise<Res
   const upstreamUrl = requireString(body, "upstreamUrl");
   const transport = await parseTransportField(body);
   const mapping = await parseMappingToken(mappingToken, env.TOKEN_KEY);
+  // 映射令牌自包含且无有效期，升级前签发的令牌可能封着明文节点，这里必须重新校验，
+  // 否则“禁止明文出站”会被存量令牌绕过。
+  assertEncryptedTransport(mapping.realQuery);
   const normalizedUpstreamUrl = validateUpstreamUrl(upstreamUrl).href;
 
   const payload: SubscriptionPayload = {
