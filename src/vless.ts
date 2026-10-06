@@ -1,3 +1,4 @@
+import { AppError } from "./errors";
 import type { MappingPayload } from "./token";
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -44,6 +45,52 @@ export interface MaskedVlessResult {
 export interface RestoredLine {
   matched: boolean;
   line: string;
+}
+
+// security 白名单：只有这两个取值代表传输层已加密。
+const ENCRYPTED_SECURITY_VALUES: readonly string[] = ["tls", "reality"];
+// VLESS 层加密的哨兵值。encryption=none 是 VLESS 协议的必填长相，不代表任何加密。
+const NO_VLESS_ENCRYPTION = "none";
+
+// 单次 allowInsecure 取值是否视为“已开启”。只有明确的 0/false 才算关闭，其余一律按开启处理。
+function isAllowInsecureEnabled(value: string): boolean {
+  const normalized = value.toLowerCase();
+  return normalized !== "0" && normalized !== "false";
+}
+
+// 默认拒绝地校验查询串是否属于加密传输：security 命中 TLS 白名单，或 encryption 表示 VLESS 层加密。
+// 取值逐字比对、不做大小写折叠，重复同名参数逐条检查，任一条不合规即拒绝，
+// 杜绝“本服务读第一个、客户端取最后一个”的缝隙。
+export function assertEncryptedTransport(query: string): void {
+  const params = new URLSearchParams(query);
+  const securityValues = params.getAll("security");
+  const encryptionValues = params.getAll("encryption");
+
+  const tlsProtected =
+    securityValues.length > 0 &&
+    securityValues.every((value) => ENCRYPTED_SECURITY_VALUES.includes(value));
+  const vlessEncrypted =
+    encryptionValues.length > 0 &&
+    encryptionValues.every((value) => value.toLowerCase() !== NO_VLESS_ENCRYPTION);
+
+  if (!tlsProtected && !vlessEncrypted) {
+    throw new AppError(
+      "insecure_transport",
+      "出于安全考虑，仅接受 security=tls、security=reality 或启用 VLESS 层加密（encryption 非 none）的真实节点",
+      400,
+    );
+  }
+
+  // allowInsecure 只在 TLS 是该节点唯一的加密与认证手段时才构成失守：
+  // reality 自带服务端认证，VLESS 层加密的握手也不依赖 CA 证书，两者跳过证书校验都不会让攻击者获得解密能力。
+  const tlsIsSoleProtection = securityValues.includes("tls") && !vlessEncrypted;
+  if (tlsIsSoleProtection && params.getAll("allowInsecure").some(isAllowInsecureEnabled)) {
+    throw new AppError(
+      "allow_insecure",
+      "出于安全考虑，不接受 allowInsecure 的真实节点：无法验证服务端证书",
+      400,
+    );
+  }
 }
 
 export function parseRealVless(uri: string): ParsedRealVless {

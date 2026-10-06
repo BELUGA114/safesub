@@ -1,14 +1,70 @@
 import { describe, expect, it } from "vitest";
 
+import { AppError } from "../src/errors";
 import {
   applyTransportOverride,
+  assertEncryptedTransport,
   createMaskedVless,
   parseRealVless,
   restoreVlessLine,
 } from "../src/vless";
 
+// 读取抛出的 AppError 错误码；未抛出任何错误或抛的不是 AppError 时返回 undefined。
+function appErrorCode(run: () => void): string | undefined {
+  try {
+    run();
+  } catch (error: unknown) {
+    return error instanceof AppError ? error.code : undefined;
+  }
+  return undefined;
+}
+
 const realUri =
   "vless://11111111-2222-4333-8444-555555555555@origin.example:8443?encryption=none&security=tls&type=ws&host=origin.example&path=%2Fsecret&sni=origin.example#Private%20Node";
+
+describe("assertEncryptedTransport", () => {
+  it.each([
+    "encryption=none&security=tls&type=ws&sni=origin.example",
+    "encryption=none&security=reality&type=tcp&sni=origin.example",
+    "security=none&encryption=mlkem768x25519plus.native.0rtt.s3cret&type=ws",
+    "encryption=none&security=tls&allowInsecure=0",
+    "encryption=none&security=tls&allowInsecure=false",
+    "encryption=none&security=reality&allowInsecure=1",
+    "security=tls&allowInsecure=1&encryption=mlkem768x25519plus.native.0rtt.s3cret",
+  ])("接受加密传输：%s", (query) => {
+    expect(() => assertEncryptedTransport(query)).not.toThrow();
+  });
+
+  // 显式标注元组类型：本仓库开启了 noUncheckedIndexedAccess，若让 it.each 把用例推断成
+  // string[][]，回调里的 query 会变成 string | undefined，无法传给 assertEncryptedTransport。
+  const insecureTransportCases: ReadonlyArray<readonly [string, string]> = [
+    ["缺少 security 且没有 VLESS 层加密", "encryption=none&type=ws"],
+    ["security=none", "encryption=none&security=none&type=ws"],
+    ["security=xtls", "encryption=none&security=xtls&type=ws"],
+    ["security 大小写不匹配", "encryption=none&security=TLS&type=ws"],
+    ["只写了 security=none", "security=none"],
+    ["encryption 全为 none 时不算加密", "security=none&encryption=None"],
+    ["重复 security 混入 none", "encryption=none&security=tls&security=none&type=ws"],
+    [
+      "重复 encryption 混入 none",
+      "security=none&encryption=mlkem768x25519plus.native.0rtt.s3cret&encryption=none",
+    ],
+  ];
+
+  it.each(insecureTransportCases)("以 insecure_transport 拒绝未加密传输：%s", (_name, query) => {
+    expect(appErrorCode(() => assertEncryptedTransport(query))).toBe("insecure_transport");
+  });
+
+  const allowInsecureCases: ReadonlyArray<readonly [string, string]> = [
+    ["allowInsecure=1", "encryption=none&security=tls&allowInsecure=1&type=ws"],
+    ["allowInsecure=true", "encryption=none&security=tls&allowInsecure=true&type=ws"],
+    ["allowInsecure 为空值", "encryption=none&security=tls&allowInsecure=&type=ws"],
+  ];
+
+  it.each(allowInsecureCases)("以 allow_insecure 拒绝跳过证书校验：%s", (_name, query) => {
+    expect(appErrorCode(() => assertEncryptedTransport(query))).toBe("allow_insecure");
+  });
+});
 
 describe("parseRealVless", () => {
   it("提取恢复所需字段", () => {
