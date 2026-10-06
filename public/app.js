@@ -13,17 +13,34 @@ const subscriptionUrl = document.querySelector("#subscription-url");
 const createSubscription = document.querySelector("#create-subscription");
 const clearMapping = document.querySelector("#clear-mapping");
 const mappingState = document.querySelector("#mapping-state");
-const status = document.querySelector("#status");
+const directStatus = document.querySelector("#direct-status");
+const maskStatus = document.querySelector("#mask-status");
+const subscriptionStatus = document.querySelector("#subscription-status");
 
 let mappingToken = localStorage.getItem(STORAGE_KEY) ?? "";
 
-function setStatus(message, kind = "") {
-  status.textContent = message;
-  if (kind === "") {
-    delete status.dataset.kind;
-  } else {
-    status.dataset.kind = kind;
+const statusAreas = [directStatus, maskStatus, subscriptionStatus];
+
+// 提示落在触发操作的那个区块里：页面底部只有一个提示时，在顶部表单提交会看不到反馈。
+// 一处更新就清掉其它区块的旧消息，避免同时留着互相矛盾的两条提示。
+function setStatus(target, message, kind = "") {
+  for (const area of statusAreas) {
+    if (area === target) {
+      continue;
+    }
+    area.textContent = "";
+    delete area.dataset.kind;
   }
+
+  target.textContent = message;
+  if (kind === "") {
+    delete target.dataset.kind;
+  } else {
+    target.dataset.kind = kind;
+  }
+
+  // 结果块展开后可能把提示挤出视口，就近滚回来，保证任何位置提交都能看到反馈。
+  target.scrollIntoView({ block: "nearest" });
 }
 
 function setMappingState(token) {
@@ -95,7 +112,7 @@ directForm.addEventListener("submit", async (event) => {
   const data = new FormData(directForm);
   const transport = data.get("transport");
   setBusy(directForm, true);
-  setStatus("正在直接生成最终订阅");
+  setStatus(directStatus, "正在直接生成最终订阅");
   try {
     const result = await postJson("/api/direct", {
       vlessUri: data.get("vlessUri"),
@@ -108,9 +125,9 @@ directForm.addEventListener("submit", async (event) => {
     }
     directSubscriptionUrl.value = result.subscriptionUrl;
     directResult.hidden = false;
-    setStatus("最终订阅已生成", "success");
+    setStatus(directStatus, "最终订阅已生成", "success");
   } catch (error) {
-    setStatus(error instanceof Error ? error.message : "生成最终订阅失败", "error");
+    setStatus(directStatus, error instanceof Error ? error.message : "生成最终订阅失败", "error");
   } finally {
     setBusy(directForm, false);
   }
@@ -120,7 +137,7 @@ maskForm.addEventListener("submit", async (event) => {
   event.preventDefault();
   const data = new FormData(maskForm);
   setBusy(maskForm, true);
-  setStatus("正在生成伪装节点");
+  setStatus(maskStatus, "正在生成伪装节点");
   try {
     const result = await postJson("/api/mask", {
       vlessUri: data.get("vlessUri"),
@@ -134,9 +151,9 @@ maskForm.addEventListener("submit", async (event) => {
     maskedUri.value = result.maskedUri;
     maskedResult.hidden = false;
     subscriptionResult.hidden = true;
-    setStatus("伪装节点已生成，映射已保存在此浏览器", "success");
+    setStatus(maskStatus, "伪装节点已生成，映射已保存在此浏览器", "success");
   } catch (error) {
-    setStatus(error instanceof Error ? error.message : "生成伪装节点失败", "error");
+    setStatus(maskStatus, error instanceof Error ? error.message : "生成伪装节点失败", "error");
   } finally {
     setBusy(maskForm, false);
   }
@@ -145,14 +162,14 @@ maskForm.addEventListener("submit", async (event) => {
 subscriptionForm.addEventListener("submit", async (event) => {
   event.preventDefault();
   if (mappingToken === "") {
-    setStatus("请先生成伪装节点", "error");
+    setStatus(maskStatus, "请先生成伪装节点", "error");
     return;
   }
 
   const data = new FormData(subscriptionForm);
   const transport = data.get("transport");
   setBusy(subscriptionForm, true);
-  setStatus("正在生成最终订阅");
+  setStatus(subscriptionStatus, "正在生成最终订阅");
   try {
     const result = await postJson("/api/subscriptions", {
       mappingToken,
@@ -165,9 +182,9 @@ subscriptionForm.addEventListener("submit", async (event) => {
     }
     subscriptionUrl.value = result.subscriptionUrl;
     subscriptionResult.hidden = false;
-    setStatus("最终订阅已生成", "success");
+    setStatus(subscriptionStatus, "最终订阅已生成", "success");
   } catch (error) {
-    setStatus(error instanceof Error ? error.message : "生成最终订阅失败", "error");
+    setStatus(subscriptionStatus, error instanceof Error ? error.message : "生成最终订阅失败", "error");
   } finally {
     setBusy(subscriptionForm, false);
   }
@@ -178,7 +195,7 @@ clearMapping.addEventListener("click", () => {
   setMappingState("");
   maskedResult.hidden = true;
   subscriptionResult.hidden = true;
-  setStatus("本地映射已清除");
+  setStatus(maskStatus, "本地映射已清除");
 });
 
 document.addEventListener("click", async (event) => {
@@ -186,11 +203,16 @@ document.addEventListener("click", async (event) => {
   if (!(button instanceof HTMLButtonElement)) {
     return;
   }
+  // 复制反馈落在按钮所在区块的提示元素里。
+  const target = button.closest("section")?.querySelector(".status");
+  if (!(target instanceof HTMLElement)) {
+    return;
+  }
   try {
     await copyValue(button.dataset.copyTarget, button);
-    setStatus("已复制到剪贴板", "success");
+    setStatus(target, "已复制到剪贴板", "success");
   } catch (error) {
-    setStatus(error instanceof Error ? error.message : "复制失败", "error");
+    setStatus(target, error instanceof Error ? error.message : "复制失败", "error");
   }
 });
 

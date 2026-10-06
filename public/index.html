@@ -45,6 +45,7 @@
               placeholder="vless://..."
               required
             ></textarea>
+            <p class="field-hint">出于安全考虑，仅接受 security=tls、security=reality 或启用 VLESS 层加密（mlkem768x25519plus）的真实节点；allowInsecure 会被拒绝。</p>
             <label for="direct-provider">服务商</label>
             <select id="direct-provider" name="provider">
               <option value="danfeng" selected>danfeng（仅支持 ws 诱饵）</option>
@@ -66,6 +67,8 @@
             </div>
             <p class="credential-warning">此链接可直接读取真实订阅，请按凭证保管。</p>
           </div>
+
+          <p id="direct-status" class="status" role="status" aria-live="polite"></p>
         </div>
       </section>
 
@@ -92,6 +95,7 @@
                 placeholder="vless://..."
                 required
               ></textarea>
+              <p class="field-hint">出于安全考虑，仅接受 security=tls、security=reality 或启用 VLESS 层加密（mlkem768x25519plus）的真实节点；allowInsecure 会被拒绝。</p>
               <label for="transport">伪装节点传输</label>
               <select id="transport" name="transport">
                 <option value="ws" selected>WebSocket（type=ws）</option>
@@ -114,6 +118,8 @@
                 </div>
               </details>
             </div>
+
+            <p id="mask-status" class="status" role="status" aria-live="polite"></p>
           </div>
         </section>
 
@@ -154,11 +160,11 @@
               </div>
               <p class="credential-warning">此链接可直接读取真实订阅，请按凭证保管。</p>
             </div>
+
+            <p id="subscription-status" class="status" role="status" aria-live="polite"></p>
           </div>
         </section>
       </div>
-
-      <p id="status" class="status" role="status" aria-live="polite"></p>
     </main>
   </body>
 </html>
