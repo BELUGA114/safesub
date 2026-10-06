@@ -87,7 +87,7 @@ export function assertEncryptedTransport(query: string): void {
   if (tlsIsSoleProtection && params.getAll("allowInsecure").some(isAllowInsecureEnabled)) {
     throw new AppError(
       "allow_insecure",
-      "出于安全考虑，不接受 allowInsecure 的真实节点：无法验证服务端证书",
+      "出于安全考虑，不接受 allowInsecure 的真实节点",
       400,
     );
   }
